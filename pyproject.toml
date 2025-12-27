@@ -1,0 +1,162 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "comformer"
+version = "2025.12.26"
+description = "Complete and Efficient Graph Transformers for Crystal Material Property Prediction"
+readme = "README.md"
+requires-python = ">=3.10,<=3.12"
+license = {text = "MIT"}
+authors = [
+    {name = "Keqiang Yan", email = "keqiangyan@tamu.edu"},
+    {name = "Cong Fu"},
+    {name = "Xiaofeng Qian"},
+    {name = "Xiaoning Qian"},
+    {name = "Shuiwang Ji"}
+]
+maintainers = [
+    {name = "Keqiang Yan", email = "keqiangyan@tamu.edu"}
+]
+keywords = [
+    "graph neural networks",
+    "transformers",
+    "materials science",
+    "crystal structure",
+    "property prediction",
+    "machine learning",
+    "deep learning"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+
+# Core dependencies
+dependencies = [
+    "numpy>=1.26.0",
+    "scipy>=1.11.0",
+    "jarvis-tools>=2024.1.1",
+    "torch>=2.6.0",
+    "torch-geometric>=2.7.0",
+    "pymatgen>=2024.1.1",
+    "e3nn>=0.5.0",
+    "sympy>=1.12",
+    "scikit-learn>=1.3.0",
+    "matplotlib>=3.8.0",
+    "tqdm>=4.60.0",
+    "pandas>=2.1.0",
+    "pytorch-ignite>=0.5.0",
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.0.0",
+]
+
+[project.optional-dependencies]
+# Development acceleration utilities
+acceleration = [
+    "pandarallel>=1.6.0",
+]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "flake8>=3.9.1",
+    "pycodestyle>=2.7.0",
+    "pydocstyle>=6.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+]
+docs = [
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+all = [
+    "pandarallel>=1.6.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=3.0.0",
+    "flake8>=3.9.1",
+    "pycodestyle>=2.7.0",
+    "pydocstyle>=6.0.0",
+    "black>=22.0.0",
+    "isort>=5.10.0",
+    "sphinx>=4.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/divelab/AIRS"
+Documentation = "https://github.com/divelab/AIRS/blob/master/OpenMat/ComFormer/README.md"
+Repository = "https://github.com/divelab/AIRS"
+"Bug Reports" = "https://github.com/divelab/AIRS/issues"
+Changelog = "https://github.com/divelab/AIRS/blob/master/CHANGELOG.md"
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*", "examples", "docs"]
+
+[tool.setuptools.package-data]
+comformer = ["*.json", "*.yaml"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | \.tox
+  | build
+  | dist
+  | \.eggs
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--verbose",
+    "--cov=comformer",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.coverage.run]
+source = ["comformer"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "setup.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]

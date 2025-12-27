@@ -1,0 +1,33 @@
+# Include documentation and configuration files
+include README.md
+include LICENSE
+include pyproject.toml
+
+# Include tutorial documentation
+recursive-include tutorial *.md
+recursive-include tutorial *.py
+recursive-include tutorial *.ipynb
+
+# Include assets (images, etc.)
+recursive-include assets *.png
+recursive-include assets *.jpg
+recursive-include assets *.jpeg
+recursive-include assets *.svg
+
+# Include configuration files
+recursive-include comformer *.json
+recursive-include comformer *.yaml
+recursive-include comformer *.yml
+
+# Exclude unnecessary files
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * .DS_Store
+exclude .gitignore
+exclude .git*
+prune tests
+prune examples
+prune docs
+prune .github
+prune .venv
+prune .claude

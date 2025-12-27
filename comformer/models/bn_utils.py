@@ -1,13 +1,10 @@
-from typing import Optional, Any
+from typing import Optional
 
 import torch
 from torch import Tensor
-from torch.nn.parameter import Parameter, UninitializedParameter, UninitializedBuffer
+from torch.nn.parameter import Parameter
 
-from torch.nn import functional as F
 from torch.nn import init
-from torch.nn.modules._functions import SyncBatchNorm as sync_batch_norm
-from torch.nn.modules.lazy import LazyModuleMixin
 from torch.nn.modules.module import Module
 
 

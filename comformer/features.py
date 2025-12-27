@@ -1,7 +1,5 @@
 # Based on the code from: https://github.com/klicperajo/dimenet,
 # https://github.com/rusty1s/pytorch_geometric/blob/master/torch_geometric/nn/models/dimenet_utils.py
-
-
 import numpy as np
 from scipy.optimize import brentq
 from scipy import special as sp

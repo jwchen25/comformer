@@ -1,9 +1,19 @@
+import os
 from functools import partial
 from typing import Any, Dict, Union
+import pickle as pk
+import json
+import pprint
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.metrics import r2_score
+from jarvis.db.jsonutils import dumpjson
+
+import torch
+from torch import nn
 
 import ignite
-import torch
-
 from ignite.contrib.handlers import TensorboardLogger
 try:
     from ignite.contrib.handlers.stores import EpochOutputStore
@@ -21,31 +31,11 @@ from ignite.engine import (
     create_supervised_evaluator,
     create_supervised_trainer,
 )
-from ignite.contrib.metrics import ROC_AUC, RocCurve
-from ignite.metrics import (
-    Accuracy,
-    Precision,
-    Recall,
-    ConfusionMatrix,
-)
-import pickle as pk
-import numpy as np
 from ignite.handlers import Checkpoint, DiskSaver, TerminateOnNan
 from ignite.metrics import Loss, MeanAbsoluteError
-from torch import nn
-from comformer import models
-# Removed get_train_val_loaders import - only custom datasets with custom loaders are supported
+
 from comformer.config import TrainingConfig
 from comformer.models.comformer import iComformer, eComformer
-
-from jarvis.db.jsonutils import dumpjson
-import json
-import pprint
-
-import os
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.metrics import r2_score
 
 
 # torch config
@@ -54,6 +44,7 @@ torch.set_default_dtype(torch.float32)
 device = "cpu"
 if torch.cuda.is_available():
     device = torch.device("cuda")
+
 
 class PolynomialLRDecay(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, max_iters, start_lr, end_lr, power=1, last_epoch=-1):
@@ -657,5 +648,4 @@ def train_main(
         print(f"Correlation plot saved to: {plot_path}")
 
     return history
-
 

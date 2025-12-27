@@ -1,31 +1,23 @@
 """Custom training interface for iComformer with pymatgen Structure inputs and ASE extxyz files."""
-
-import numpy as np
-import pandas as pd
-import torch
-from typing import List, Optional, Union
-from jarvis.core.atoms import Atoms
-from jarvis.core.lattice import Lattice as JarvisLattice
-from pymatgen.core import Structure
-from comformer.graphs import PygGraph, PygStructureDataset
-from comformer.train import train_main
-from torch.utils.data import DataLoader
-from jarvis.db.jsonutils import dumpjson
 import os
 import random
 from multiprocessing import Pool, cpu_count
-from functools import partial
 import hashlib
 import pickle
+import numpy as np
+import pandas as pd
+from typing import List, Optional, Union
+from ase.io import read as ase_read
+from jarvis.core.atoms import Atoms
+from jarvis.db.jsonutils import dumpjson
+from pymatgen.core import Structure
+from pymatgen.io.ase import AseAtomsAdaptor
 
-# ASE imports (optional, will raise error if not installed when needed)
-try:
-    from ase import Atoms as ASEAtoms
-    from ase.io import read as ase_read
-    ASE_AVAILABLE = True
-except ImportError:
-    ASE_AVAILABLE = False
-    ASEAtoms = None
+import torch
+from torch.utils.data import DataLoader
+
+from comformer.graphs import PygGraph, PygStructureDataset
+from comformer.train import train_main
 
 
 def pymatgen_to_jarvis(structure: Structure) -> dict:
@@ -165,10 +157,6 @@ def ase_atoms_to_pymatgen(ase_atoms) -> Structure:
     Raises:
         ImportError: If ASE is not installed
     """
-    if not ASE_AVAILABLE:
-        raise ImportError("ASE is not installed. Please install it with: pip install ase")
-
-    from pymatgen.io.ase import AseAtomsAdaptor
 
     # Use pymatgen's built-in converter
     adaptor = AseAtomsAdaptor()
@@ -207,8 +195,6 @@ def read_extxyz_file(
         >>> structures, labels = read_extxyz_file("data.xyz", "energy")
         >>> structures, labels = read_extxyz_file("data.xyz", "forces", index="::10")
     """
-    if not ASE_AVAILABLE:
-        raise ImportError("ASE is not installed. Please install it with: pip install ase")
 
     if not os.path.exists(filename):
         raise FileNotFoundError(f"File not found: {filename}")
@@ -954,10 +940,6 @@ def train_from_extxyz(
         - Supports both global properties (atoms.info) and per-atom properties (atoms.arrays)
         - Per-atom properties are automatically averaged to get a single target value
     """
-    if not ASE_AVAILABLE:
-        raise ImportError(
-            "ASE is required for this function. Please install it with: pip install ase"
-        )
 
     print("\n" + "="*60)
     print("ComFormer Training from ExtXYZ File")

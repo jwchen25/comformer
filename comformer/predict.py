@@ -10,12 +10,12 @@ from pathlib import Path
 from typing import List, Union, Dict
 import torch
 from pymatgen.core import Structure
+from jarvis.core.atoms import Atoms
+from ignite.handlers import Checkpoint
 
 from comformer.models.comformer import iComformer, eComformer, iComformerConfig, eComformerConfig
 from comformer.custom_train import pymatgen_to_jarvis
 from comformer.graphs import PygGraph, PygStructureDataset
-from jarvis.core.atoms import Atoms
-from ignite.handlers import Checkpoint
 
 
 class ComformerPredictor:

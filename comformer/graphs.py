@@ -7,7 +7,6 @@ from collections import defaultdict
 from typing import List, Tuple, Sequence, Optional
 import torch
 from torch_geometric.data import Data
-from torch_geometric.transforms import LineGraph
 from torch_geometric.data.batch import Batch
 
 try:

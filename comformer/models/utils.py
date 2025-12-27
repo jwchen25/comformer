@@ -5,8 +5,6 @@ import numpy as np
 import torch
 from torch import nn
 
-from torch_geometric.utils import scatter
-from torch_geometric.utils.num_nodes import maybe_num_nodes
 
 class RBFExpansion(nn.Module):
     """Expand interatomic distances with radial basis functions."""

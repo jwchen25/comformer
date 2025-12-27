@@ -10,14 +10,10 @@ readme = "README.md"
 requires-python = ">=3.10,<=3.12"
 license = {text = "MIT"}
 authors = [
-    {name = "Keqiang Yan", email = "keqiangyan@tamu.edu"},
-    {name = "Cong Fu"},
-    {name = "Xiaofeng Qian"},
-    {name = "Xiaoning Qian"},
-    {name = "Shuiwang Ji"}
+    {name = "Junwu Chen", email = "junwu.chen@epfl.ch"}
 ]
 maintainers = [
-    {name = "Keqiang Yan", email = "keqiangyan@tamu.edu"}
+    {name = "Junwu Chen", email = "junwu.chen@epfl.ch"}
 ]
 keywords = [
     "graph neural networks",
@@ -45,6 +41,7 @@ classifiers = [
 dependencies = [
     "numpy>=1.26.0",
     "scipy>=1.11.0",
+    "ase>=3.23.0",
     "jarvis-tools>=2024.1.1",
     "torch>=2.6.0",
     "torch-geometric>=2.7.0",
@@ -92,11 +89,8 @@ all = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/divelab/AIRS"
-Documentation = "https://github.com/divelab/AIRS/blob/master/OpenMat/ComFormer/README.md"
-Repository = "https://github.com/divelab/AIRS"
-"Bug Reports" = "https://github.com/divelab/AIRS/issues"
-Changelog = "https://github.com/divelab/AIRS/blob/master/CHANGELOG.md"
+Homepage = "https://github.com/jwchen25/comformer"
+Repository = "https://github.com/jwchen25/comformer"
 
 [tool.setuptools]
 zip-safe = false

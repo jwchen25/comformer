@@ -10,6 +10,24 @@ The package version of ComFormer model (ICLR 2024).
 
 ---
 
+## 📑 Table of Contents
+
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Usage](#-usage)
+  - [Training from ExtXYZ Files](#from-extxyz-files-ase)
+  - [Training from pymatgen](#from-pymatgen-structures)
+  - [Large Dataset Optimization](#large-dataset-optimization)
+  - [Model Outputs](#model-outputs)
+- [Key Features](#-key-features)
+- [Benchmarked Results](#-benchmarked-results)
+- [Documentation](#-documentation)
+- [Citation](#-citation)
+- [Acknowledgments](#-acknowledgments)
+- [Contact](#-contact)
+
+---
+
 ## 📋 Requirements
 
 ### Minimum Requirements
@@ -21,36 +39,12 @@ The package version of ComFormer model (ICLR 2024).
 ### Supported Platforms
 
 ComFormer supports all major platforms including:
-- Linux (x86_64, aarch64/ARM64)
-- macOS (Intel and Apple Silicon)
-- Windows
+- **Linux**: x86_64, aarch64/ARM64
+- **macOS**: Intel and Apple Silicon
+- **Windows**: x86_64
+- **NVIDIA GH200 Grace Hopper**: Full support with ARM64 + CUDA
 
----
-
-## 🚀 Quick Start
-
-### Installation
-
-```bash
-# Clone repository
-git clone <repository-url>
-cd ComFormer
-
-# Install PyTorch 2.6+ (example with CUDA 12.6)
-pip install torch --index-url https://download.pytorch.org/whl/cu126
-
-# Install ComFormer
-pip install -e .
-```
-
-**That's it!** The installation will automatically install all required dependencies.
-
-### Verify Installation
-
-```bash
-# Check dependencies
-python tests/test_architecture_detection.py
-```
+For detailed platform compatibility and installation instructions, see [PLATFORM_COMPATIBILITY.md](tutorial/PLATFORM_COMPATIBILITY.md).
 
 ---
 
@@ -59,25 +53,15 @@ python tests/test_architecture_detection.py
 ### Standard Installation
 
 ```bash
-# Install ComFormer with all dependencies
-pip install -e .
+pip install git+https://github.com/jwchen25/comformer.git
 ```
 
-### PyTorch Installation Options
+### Specific PyTorch versions
 
-For CUDA 12.6:
+For example, use PyTorch 2.8.0 with CUDA 12.9:
 ```bash
-pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu126
-```
-
-For CUDA 11.8:
-```bash
-pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cu118
-```
-
-For CPU only:
-```bash
-pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu129
+pip install git+https://github.com/jwchen25/comformer.git
 ```
 
 ---
@@ -86,8 +70,10 @@ pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
 
 ### Training Custom Models
 
+#### From pymatgen Structures
+
 ```python
-from comformer import train_model
+from comformer.custom_train import train_custom_icomformer
 from pymatgen.core import Structure
 
 # Prepare your data
@@ -95,13 +81,99 @@ structures = [...]  # List[pymatgen.Structure]
 labels = [...]      # List[float]
 
 # Train model
-train_model(
-    structures=structures,
+results = train_custom_icomformer(
+    strucs=structures,
     labels=labels,
     output_dir="./my_model",
-    epochs=100,
+    n_epochs=100,
     batch_size=32
 )
+```
+
+#### From ExtXYZ Files (ASE)
+
+Train directly from ASE extxyz files:
+
+```python
+from comformer.custom_train import train_from_extxyz
+
+# Train from extxyz file
+results = train_from_extxyz(
+    extxyz_file="structures.xyz",
+    target_property="formation_energy",  # Property from atoms.info or atoms.arrays
+    output_dir="./my_model",
+    n_epochs=100,
+    batch_size=32
+)
+```
+
+**Supported property types:**
+- **Global properties** (atoms.info): energy, formation_energy, band_gap, etc.
+- **Per-atom properties** (atoms.arrays): forces, charges, etc. (averaged to scalar)
+
+**Advanced options:**
+```python
+# Read subset of structures
+results = train_from_extxyz(
+    extxyz_file="large_dataset.xyz",
+    target_property="energy",
+    index=":1000",  # Only first 1000 structures
+    output_dir="./my_model"
+)
+
+# Enable graph caching for repeated experiments
+results = train_from_extxyz(
+    extxyz_file="structures.xyz",
+    target_property="energy",
+    cache_graphs=True,
+    graph_cache_dir="./graph_cache",
+    output_dir="./my_model"
+)
+```
+
+See [EXTXYZ_INTERFACE.md](tutorial/EXTXYZ_INTERFACE.md) for complete guide.
+
+### Large Dataset Optimization
+
+For large datasets (200k+ samples), ComFormer includes several optimizations:
+
+```python
+from comformer.custom_train import train_custom_icomformer
+
+# Optimizations are enabled automatically for large datasets
+results = train_custom_icomformer(
+    strucs=structures,
+    labels=labels,
+    output_dir="./my_model",
+    n_epochs=100,
+    batch_size=32,
+    cache_graphs=True,          # Cache graphs for speedup
+    graph_cache_dir="./cache",  # Cache directory
+    num_workers=4               # Parallel data loading
+)
+```
+
+See [OPTIMIZATION_GUIDE.md](tutorial/OPTIMIZATION_GUIDE.md) for detailed benchmarks and tuning tips.
+
+### Model Outputs
+
+After training, ComFormer automatically generates:
+
+1. **Best model checkpoint**: `output_dir/best_model.pt`
+2. **Test predictions CSV**: `output_dir/test_predictions.csv`
+   - Columns: `id`, `target`, `prediction`
+3. **Correlation plot**: `output_dir/test_predictions_correlation.jpg`
+   - Scatter plot of predictions vs. true values
+   - Metrics: R², MAE, RMSE
+4. **Training history**: `output_dir/history.json`
+
+Example of generated files:
+```
+my_model/
+├── best_model.pt                          # Trained model
+├── test_predictions.csv                   # Predictions on test set
+├── test_predictions_correlation.jpg       # Visualization
+└── history.json                           # Training metrics
 ```
 
 ### Making Predictions
@@ -134,23 +206,7 @@ for batch in loader:
     pass
 ```
 
-For complete API documentation, see [PREDICTION_GUIDE.md](PREDICTION_GUIDE.md).
-
----
-
-## 🧪 Testing
-
-### Verify Dependencies
-
-```bash
-python tests/test_architecture_detection.py
-```
-
-### Run All Tests
-
-```bash
-pytest tests/
-```
+For complete API documentation, see [PREDICTION_GUIDE.md](tutorial/PREDICTION_GUIDE.md).
 
 ---
 
@@ -184,9 +240,10 @@ Please cite our paper if you find the code helpful or if you want to use the ben
 
 ## 🙏 Acknowledgments
 
-- PyTorch team for excellent deep learning framework
-- PyTorch Geometric team for graph neural network library
-- Materials Project for providing materials data
+- **PyTorch team** for the excellent deep learning framework
+- **PyTorch Geometric team** for the graph neural network library
+- **Materials Project** for providing comprehensive materials data
+- **AIRS** for original code of [ComFormer](https://github.com/divelab/AIRS/tree/main/OpenMat/ComFormer)
 
 ---
 

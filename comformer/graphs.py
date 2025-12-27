@@ -323,15 +323,29 @@ def build_undirected_edgedata(
 
     edges: dictionary mapping (src_id, dst_id) to set of dst_image
     r: cartesian displacement vector from src -> dst
-    """
-    # second pass: construct *undirected* graph
-    # import pprint
-    u, v, r, l, nei, angle, atom_lat = [], [], [], [], [], [], []
-    v1, v2, v3 = atoms.lattice.cart_coords(a), atoms.lattice.cart_coords(b), atoms.lattice.cart_coords(c)
-    # atom_lat.append([v1, v2, v3, -v1, -v2, -v3])
-    atom_lat.append([v1, v2, v3])
-    for (src_id, dst_id), images in edges.items():
 
+    Optimized version with pre-allocated arrays for better memory performance.
+    """
+    # Compute lattice vectors once
+    v1, v2, v3 = atoms.lattice.cart_coords(a), atoms.lattice.cart_coords(b), atoms.lattice.cart_coords(c)
+    atom_lat = [[v1, v2, v3]]
+
+    # Pre-calculate total number of edges (each edge in dict becomes 2 undirected edges)
+    total_edges = sum(len(images) for images in edges.values()) * 2
+
+    # Pre-allocate lists with estimated size for better memory performance
+    u = [0] * total_edges
+    v_list = [0] * total_edges
+    r = [None] * total_edges
+    l = []  # Keep as dynamic list since l is not used much
+    nei = [None] * total_edges
+
+    # Reuse lattice vector reference instead of copying
+    lattice_vec = [v1, v2, v3]
+
+    # Build edges with pre-allocated lists
+    edge_idx = 0
+    for (src_id, dst_id), images in edges.items():
         for dst_image in images:
             # fractional coordinate for periodic image of dst
             dst_coord = atoms.frac_coords[dst_id] + dst_image
@@ -339,22 +353,30 @@ def build_undirected_edgedata(
             d = atoms.lattice.cart_coords(
                 dst_coord - atoms.frac_coords[src_id]
             )
+            # Add both directions of the edge (undirected graph)
             for uu, vv, dd in [(src_id, dst_id, d), (dst_id, src_id, -d)]:
-                u.append(uu)
-                v.append(vv)
-                r.append(dd)
-                # nei.append([v1, v2, v3, -v1, -v2, -v3])
-                nei.append([v1, v2, v3])
-                # angle.append([compute_bond_cosine(dd, v1), compute_bond_cosine(dd, v2), compute_bond_cosine(dd, v3)])
+                u[edge_idx] = uu
+                v_list[edge_idx] = vv
+                r[edge_idx] = dd
+                nei[edge_idx] = lattice_vec
+                edge_idx += 1
 
-    u = torch.tensor(u)
-    v = torch.tensor(v)
-    r = torch.tensor(np.array(r)).type(torch.get_default_dtype())
-    l = torch.tensor(l).type(torch.int)
-    nei = torch.tensor(np.array(nei)).type(torch.get_default_dtype())
-    atom_lat = torch.tensor(np.array(atom_lat)).type(torch.get_default_dtype())
-    # nei_angles = torch.tensor(angle).type(torch.get_default_dtype())
-    return u, v, r, l, nei, atom_lat
+    # Trim lists if needed (in case estimate was wrong)
+    if edge_idx < total_edges:
+        u = u[:edge_idx]
+        v_list = v_list[:edge_idx]
+        r = r[:edge_idx]
+        nei = nei[:edge_idx]
+
+    # Convert to tensors more efficiently
+    u = torch.tensor(u, dtype=torch.long)
+    v_tensor = torch.tensor(v_list, dtype=torch.long)
+    r = torch.tensor(np.array(r), dtype=torch.get_default_dtype())
+    l = torch.tensor(l, dtype=torch.int)
+    nei = torch.tensor(np.array(nei), dtype=torch.get_default_dtype())
+    atom_lat = torch.tensor(np.array(atom_lat), dtype=torch.get_default_dtype())
+
+    return u, v_tensor, r, l, nei, atom_lat
 
 
 class PygGraph(object):

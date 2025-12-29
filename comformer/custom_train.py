@@ -1,7 +1,7 @@
 """Custom training interface for iComformer with pymatgen Structure inputs and ASE extxyz files."""
 import os
 import random
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 import hashlib
 import pickle
 import numpy as np
@@ -12,6 +12,8 @@ from jarvis.core.atoms import Atoms
 from jarvis.db.jsonutils import dumpjson
 from pymatgen.core import Structure
 from pymatgen.io.ase import AseAtomsAdaptor
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
 import torch
 from torch.utils.data import DataLoader
@@ -97,19 +99,43 @@ def prepare_custom_dataset(
     # Use parallel processing for large datasets
     num_strucs = len(strucs)
     if num_strucs > 100:
-        # Parallel processing for datasets > 100 samples
-        num_workers = min(cpu_count() // 2, max(1, num_strucs // 100), 64)
-        print(f"Using {num_workers} parallel workers for structure conversion...")
+        # Adaptive worker count based on dataset size to prevent memory issues
+        if num_strucs > 100000:
+            num_workers = min(16, max(4, cpu_count() // 4))
+            batch_size = 128
+        elif num_strucs > 50000:
+            num_workers = min(24, max(8, cpu_count() // 3))
+            batch_size = 256
+        else:
+            num_workers = min(32, max(4, cpu_count() // 2))
+            batch_size = 512
 
-        from tqdm import tqdm
-        with Pool(processes=num_workers) as pool:
-            # Create indexed args for parallel processing
-            indexed_strucs = list(enumerate(strucs))
-            results = list(tqdm(
-                pool.imap(_safe_pymatgen_to_jarvis, indexed_strucs, chunksize=max(1, num_strucs // (num_workers * 4))),
-                total=num_strucs,
-                desc="Converting structures"
-            ))
+        print(f"Using {num_workers} parallel workers for structure conversion (dataset size: {num_strucs})...")
+
+        # Use joblib for better memory management and stability
+        indexed_strucs = list(enumerate(strucs))
+
+        # For very large datasets, limit data transfer and use smaller batches
+        if num_strucs > 100000:
+            results = Parallel(
+                n_jobs=num_workers,
+                backend='loky',
+                verbose=5,
+                batch_size=batch_size,
+                max_nbytes='100M',  # Limit data transfer to 100MB per batch
+                pre_dispatch='2*n_jobs'  # Limit pre-dispatched tasks
+            )(
+                delayed(_safe_pymatgen_to_jarvis)(args) for args in tqdm(indexed_strucs, desc="Converting structures")
+            )
+        else:
+            results = Parallel(
+                n_jobs=num_workers,
+                backend='loky',
+                verbose=5,
+                batch_size=batch_size
+            )(
+                delayed(_safe_pymatgen_to_jarvis)(args) for args in tqdm(indexed_strucs, desc="Converting structures")
+            )
 
         # Reconstruct atoms_dicts list maintaining original order
         atoms_dicts = [None] * num_strucs
@@ -358,8 +384,6 @@ def load_pyg_graphs_from_df(
     Returns:
         Tuple of (list of PyTorch Geometric Data objects, list of valid indices)
     """
-    from tqdm import tqdm
-
     atoms_list = df["atoms"].values
     num_structures = len(atoms_list)
 
@@ -392,19 +416,48 @@ def load_pyg_graphs_from_df(
 
     # Use parallel processing for large datasets (>50 structures)
     if num_structures > 50:
-        # Parallel processing for datasets > 50 samples
-        # For graph construction, use fewer workers due to memory constraints
-        num_workers = min(64, cpu_count() // 2)  # Limit to 8 workers max
-        print(f"Using {num_workers} parallel workers for graph construction...")
+        # Adaptive worker count based on dataset size to prevent memory issues
+        # For very large datasets (>100k), use fewer workers to reduce memory pressure
+        if num_structures > 100000:
+            num_workers = min(8, max(4, cpu_count() // 4))
+            batch_size = 128
+        elif num_structures > 50000:
+            num_workers = min(16, max(8, cpu_count() // 3))
+            batch_size = 256
+        else:
+            num_workers = min(32, cpu_count() // 2)
+            batch_size = 512
 
-        with Pool(processes=num_workers) as pool:
-            # Create indexed args for parallel processing
-            indexed_atoms = [(i, atoms_dict, config) for i, atoms_dict in enumerate(atoms_list)]
-            results = list(tqdm(
-                pool.imap(_safe_atoms_to_graph, indexed_atoms, chunksize=max(1, num_structures // (num_workers * 2))),
-                total=num_structures,
-                desc="Building graphs"
-            ))
+        print(f"Using {num_workers} parallel workers for graph construction (dataset size: {num_structures})...")
+
+        # Use joblib for better memory management and stability
+        # Key parameters for memory control:
+        # - batch_size: Controls how many tasks are dispatched at once
+        # - max_nbytes: Limits data transfer size (None = no limit, but we set it for large datasets)
+        # - pre_dispatch: Controls number of tasks pre-dispatched ('2*n_jobs' is default)
+        indexed_atoms = [(i, atoms_dict, config) for i, atoms_dict in enumerate(atoms_list)]
+
+        # For very large datasets, limit data transfer and use smaller batches
+        if num_structures > 100000:
+            results = Parallel(
+                n_jobs=num_workers,
+                backend='loky',
+                verbose=5,
+                batch_size=batch_size,
+                max_nbytes='100M',  # Limit data transfer to 100MB per batch
+                pre_dispatch='2*n_jobs'  # Limit pre-dispatched tasks
+            )(
+                delayed(_safe_atoms_to_graph)(args) for args in tqdm(indexed_atoms, desc="Building graphs")
+            )
+        else:
+            results = Parallel(
+                n_jobs=num_workers,
+                backend='loky',
+                verbose=5,
+                batch_size=batch_size
+            )(
+                delayed(_safe_atoms_to_graph)(args) for args in tqdm(indexed_atoms, desc="Building graphs")
+            )
 
         # Reconstruct graphs list maintaining original order
         graphs = [None] * num_structures

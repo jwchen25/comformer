@@ -98,7 +98,7 @@ def prepare_custom_dataset(
     num_strucs = len(strucs)
     if num_strucs > 100:
         # Parallel processing for datasets > 100 samples
-        num_workers = min(cpu_count(), max(1, num_strucs // 100))
+        num_workers = min(cpu_count() // 2, max(1, num_strucs // 100), 64)
         print(f"Using {num_workers} parallel workers for structure conversion...")
 
         from tqdm import tqdm
@@ -394,7 +394,7 @@ def load_pyg_graphs_from_df(
     if num_structures > 50:
         # Parallel processing for datasets > 50 samples
         # For graph construction, use fewer workers due to memory constraints
-        num_workers = max(1, cpu_count() // 2)  # Limit to 8 workers max
+        num_workers = min(64, cpu_count() // 2)  # Limit to 8 workers max
         print(f"Using {num_workers} parallel workers for graph construction...")
 
         with Pool(processes=num_workers) as pool:
@@ -684,7 +684,7 @@ def train_from_list(
 
     # Adaptive num_workers for large datasets
     total_samples = len(train_dataset) + len(val_dataset) + len(test_dataset)
-    if num_workers == 0 and total_samples > 1000:
+    if num_workers == 0 and total_samples > 10000:
         # For large datasets, use multiple workers
         num_workers = min(8, cpu_count() // 2)
         print(f"Large dataset detected ({total_samples} samples). Using {num_workers} DataLoader workers.")

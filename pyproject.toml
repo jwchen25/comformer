@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "comformer"
-version = "2025.12.27"
+version = "2025.12.29"
 description = "Complete and Efficient Graph Transformers for Crystal Material Property Prediction"
 readme = "README.md"
 requires-python = ">=3.10,<3.13"
@@ -58,6 +58,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# for data retrieval, extraction and preproessing
+data = [
+    "mp-api>=0.35.0",
+]
 # Development acceleration utilities
 acceleration = [
     "pandarallel>=1.6.0",
@@ -96,7 +100,7 @@ Repository = "https://github.com/jwchen25/comformer"
 zip-safe = false
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*", "examples", "docs"]
+exclude = ["tests", "tutorial", "data", "datasets*"]
 
 [tool.setuptools.package-data]
 comformer = ["*.json", "*.yaml"]

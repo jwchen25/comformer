@@ -5,6 +5,10 @@ __pycache__/
 *.so
 .Python
 
+# Datasets
+datasets
+datasets2
+
 # Virtual Environments
 .venv/
 venv/

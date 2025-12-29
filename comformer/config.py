@@ -77,6 +77,10 @@ class TrainingConfig(BaseSettings):
     use_lattice: bool = False
     use_angle: bool = False
 
+    # normalization statistics
+    mean_train: Optional[float] = None  # Mean of training labels for denormalization
+    std_train: Optional[float] = None   # Std of training labels for denormalization
+
     # model configuration
     model: Union[
         iComformerConfig,

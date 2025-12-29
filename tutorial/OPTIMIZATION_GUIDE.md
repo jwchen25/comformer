@@ -23,9 +23,9 @@ This guide documents performance optimizations implemented for training ComForme
 
 **Configuration:**
 ```python
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     # ... other parameters ...
@@ -62,7 +62,7 @@ results = train_custom_icomformer(
 **Auto-configuration:**
 ```python
 # Automatically detects CUDA and dataset size
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,  # 200k samples
     labels=labels,
     num_workers=0,  # Will auto-set to 4 for large datasets
@@ -88,7 +88,7 @@ results = train_custom_icomformer(
 
 **Usage:**
 ```python
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     cache_graphs=True,  # Enable caching
@@ -165,14 +165,14 @@ for idx, edge in enumerate(edges):
 ### Basic Usage (Auto-optimized)
 ```python
 from pymatgen.core import Structure
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 
 # Load your structures and labels
 structures = load_structures()  # List of pymatgen Structure objects
 labels = load_labels()  # List of target values
 
 # Train with automatic optimizations
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     learning_rate=0.001,
@@ -184,7 +184,7 @@ results = train_custom_icomformer(
 
 ### Large Dataset with Caching
 ```python
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,  # 200k samples
     labels=labels,
     learning_rate=0.001,
@@ -197,7 +197,7 @@ results = train_custom_icomformer(
 )
 
 # Second experiment reuses cached graphs
-results2 = train_custom_icomformer(
+results2 = train_from_list(
     strucs=structures,  # Same structures
     labels=labels,
     learning_rate=0.01,  # Different hyperparameter
@@ -209,7 +209,7 @@ results2 = train_custom_icomformer(
 
 ### Maximum Performance Configuration
 ```python
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     learning_rate=0.001,
@@ -250,11 +250,11 @@ graph_cache_dir="./persistent_cache",  # Use a persistent location
 ### 4. Reuse Cached Graphs
 ```python
 # First experiment
-train_custom_icomformer(..., cache_graphs=True, graph_cache_dir="./cache")
+train_from_list(..., cache_graphs=True, graph_cache_dir="./cache")
 
 # Hyperparameter tuning (reuses graphs)
 for lr in [0.001, 0.01, 0.1]:
-    train_custom_icomformer(
+    train_from_list(
         ...,
         learning_rate=lr,
         cache_graphs=True,
@@ -283,7 +283,7 @@ Large dataset detected (200000 samples). Using 4 DataLoader workers.
 
 ## Configuration Parameters
 
-### New Parameters in `train_custom_icomformer()`
+### New Parameters in `train_from_list()`
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|

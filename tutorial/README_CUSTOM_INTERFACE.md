@@ -22,14 +22,14 @@ For detailed installation instructions, see [INSTALLATION.md](INSTALLATION.md)
 
 ```python
 from pymatgen.core import Structure
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 
 # Your data
 strucs = [structure1, structure2, ...]  # List of pymatgen.Structure
 labels = [value1, value2, ...]          # List of corresponding label values
 
 # Train model
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=strucs,
     labels=labels,
     output_dir="./my_model"
@@ -50,7 +50,7 @@ That's it!
 
 ## Interface Function
 
-### `train_custom_icomformer(strucs, labels, **kwargs)`
+### `train_from_list(strucs, labels, **kwargs)`
 
 **Required Parameters:**
 - `strucs`: List of pymatgen.Structure objects
@@ -85,7 +85,7 @@ Dictionary containing training history and best metrics:
 
 ```python
 from pymatgen.core import Lattice, Structure
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 import numpy as np
 
 # Create example dataset
@@ -103,7 +103,7 @@ for i in range(100):
     labels.append(-2.5 + 0.1 * a)  # Formation energy example
 
 # Train model
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=strucs,
     labels=labels,
     learning_rate=0.001,

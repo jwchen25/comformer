@@ -61,7 +61,6 @@ class ComformerConv(MessagePassing):
         self.bn = nn.BatchNorm1d(out_channels)
         self.bn_att = nn.BatchNorm1d(out_channels)
         self.sigmoid = nn.Sigmoid()
-        print('I am using the correct version of matformer')
 
     def forward(self, x: Union[Tensor, PairTensor], edge_index: Adj,
                 edge_attr: OptTensor = None, return_attention_weights=None):
@@ -148,7 +147,6 @@ class ComformerConv_edge(nn.Module):
         
         self.bn = nn.BatchNorm1d(out_channels)
         self.sigmoid = nn.Sigmoid()
-        print('I am using the invariant version of EPCNet')
 
     def forward(self, edge: Union[Tensor, PairTensor], edge_nei_len: OptTensor = None, edge_nei_angle: OptTensor = None):
         # preprocess for edge of shape [num_edges, hidden_dim]

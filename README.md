@@ -2,7 +2,6 @@
 
 [![OpenReview](https://img.shields.io/badge/OpenReview-ICLR%202024-blue)](https://openreview.net/forum?id=BnQY9XiRAS)
 [![arXiv](https://img.shields.io/badge/arXiv-2403.11857-b31b1b.svg)](https://arxiv.org/pdf/2403.11857)
-[![Code](https://img.shields.io/badge/Code-GitHub-green)](https://github.com/divelab/AIRS)
 
 The package version of ComFormer model (ICLR 2024).
 
@@ -15,13 +14,13 @@ The package version of ComFormer model (ICLR 2024).
 - [Requirements](#-requirements)
 - [Installation](#-installation)
 - [Usage](#-usage)
-  - [Training from ExtXYZ Files](#from-extxyz-files-ase)
   - [Training from pymatgen](#from-pymatgen-structures)
+  - [Training from ExtXYZ Files](#from-extxyz-files-ase)
   - [Large Dataset Optimization](#large-dataset-optimization)
   - [Model Outputs](#model-outputs)
-- [Key Features](#-key-features)
+  - [Making Predictions by Loading Local Models](#making-predictions-by-loading-local-models)
+  - [Making Predictions by Loading HuggingFace Models](#high-performance-prediction)
 - [Benchmarked Results](#-benchmarked-results)
-- [Documentation](#-documentation)
 - [Citation](#-citation)
 - [Acknowledgments](#-acknowledgments)
 - [Contact](#-contact)
@@ -73,7 +72,7 @@ pip install git+https://github.com/jwchen25/comformer.git
 #### From pymatgen Structures
 
 ```python
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 from pymatgen.core import Structure
 
 # Prepare your data
@@ -81,7 +80,7 @@ structures = [...]  # List[pymatgen.Structure]
 labels = [...]      # List[float]
 
 # Train model
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     output_dir="./my_model",
@@ -99,7 +98,7 @@ from comformer.custom_train import train_from_extxyz
 
 # Train from extxyz file
 results = train_from_extxyz(
-    extxyz_file="structures.xyz",
+    extxyz_file="structures.extxyz",
     target_property="formation_energy",  # Property from atoms.info or atoms.arrays
     output_dir="./my_model",
     n_epochs=100,
@@ -138,10 +137,10 @@ See [EXTXYZ_INTERFACE.md](tutorial/EXTXYZ_INTERFACE.md) for complete guide.
 For large datasets (200k+ samples), ComFormer includes several optimizations:
 
 ```python
-from comformer.custom_train import train_custom_icomformer
+from comformer.custom_train import train_from_list
 
 # Optimizations are enabled automatically for large datasets
-results = train_custom_icomformer(
+results = train_from_list(
     strucs=structures,
     labels=labels,
     output_dir="./my_model",
@@ -176,7 +175,7 @@ my_model/
 └── history.json                           # Training metrics
 ```
 
-### Making Predictions
+### Making Predictions by Loading Local Models
 
 ```python
 from comformer import load_predictor
@@ -184,9 +183,35 @@ from comformer import load_predictor
 # Load trained model
 predictor = load_predictor("./my_model")
 
-# Predict properties for new structures
+# Predict properties for new structures with default batch size of 32
 predictions = predictor.predict(structures)
+
+# Predict properties for new structures with batch size of 64
+predictions = predictor.predict(structures, batch_size=64)
 ```
+
+### Making Predictions by Loading HuggingFace Models
+
+```python
+from comformer import load_predictor_hf
+
+# Load trained model (default test model)
+predictor = load_predictor_hf()
+
+# Load trained model with specific hf repo and subfolder
+predictor = load_predictor_hf(
+    repo_id="jwchen25/MatFlow",
+    subfolder="property_prediction/test",
+)
+
+# Predict properties for new structures with default batch size of 32
+predictions = predictor.predict(structures)
+
+# Predict properties for new structures with batch size of 64
+predictions = predictor.predict(structures, batch_size=64)
+```
+
+See [PREDICTION_GUIDE.md](tutorial/PREDICTION_GUIDE.md) for detailed optimization strategies.
 
 ### Using with PyTorch DataLoader
 
@@ -205,8 +230,6 @@ for batch in loader:
     # Your training code
     pass
 ```
-
-For complete API documentation, see [PREDICTION_GUIDE.md](tutorial/PREDICTION_GUIDE.md).
 
 ---
 

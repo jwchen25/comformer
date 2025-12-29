@@ -462,7 +462,7 @@ def load_pyg_graphs_from_df(
     return graphs, valid_indices
 
 
-def train_custom_icomformer(
+def train_from_list(
     strucs: List[Structure],
     labels: List[float],
     # Training parameters
@@ -477,9 +477,9 @@ def train_custom_icomformer(
     # Model parameters
     model_name: str = "iComformer",
     atom_features: str = "cgcnn",
-    cutoff: float = 8.0,
-    max_neighbors: int = 12,
-    use_lattice: bool = False,
+    cutoff: float = 6.0,
+    max_neighbors: int = 25,
+    use_lattice: bool = True,
     use_angle: bool = False,
     # Other parameters
     output_dir: str = "./custom_output",
@@ -783,7 +783,6 @@ def train_custom_icomformer(
     result = train_main(
         config,
         train_val_test_loaders=train_val_test_loaders,
-        use_save=True
     )
 
     print("\n" + "="*60)
@@ -833,9 +832,9 @@ def train_from_extxyz(
     # Model parameters
     model_name: str = "iComformer",
     atom_features: str = "cgcnn",
-    cutoff: float = 8.0,
-    max_neighbors: int = 12,
-    use_lattice: bool = False,
+    cutoff: float = 6.0,
+    max_neighbors: int = 25,
+    use_lattice: bool = True,
     use_angle: bool = False,
     # Other parameters
     output_dir: str = "./extxyz_output",
@@ -936,7 +935,7 @@ def train_from_extxyz(
 
     Notes:
         - All code and comments are in English
-        - Leverages all optimizations from train_custom_icomformer
+        - Leverages all optimizations from train_from_list
         - Supports both global properties (atoms.info) and per-atom properties (atoms.arrays)
         - Per-atom properties are automatically averaged to get a single target value
     """
@@ -964,7 +963,7 @@ def train_from_extxyz(
     print("Starting model training...")
     print("="*60)
 
-    results = train_custom_icomformer(
+    results = train_from_list(
         strucs=structures,
         labels=labels,
         learning_rate=learning_rate,
@@ -1018,7 +1017,7 @@ def example_usage():
     labels = [-2.5, -1.8, -2.1]
 
     # Train the model
-    results = train_custom_icomformer(
+    results = train_from_list(
         strucs=strucs,
         labels=labels,
         learning_rate=0.001,

@@ -140,9 +140,6 @@ def train_main(
     config: Union[TrainingConfig, Dict[str, Any]],
     model: nn.Module = None,
     train_val_test_loaders=[],
-    test_only=False,
-    use_save=True,
-    mp_id_list=None,
 ):
     """
     `config` should conform to matformer.conf.TrainingConfig, and
@@ -167,18 +164,17 @@ def train_main(
     checkpoint_dir = os.path.join(config.output_dir)
     deterministic = False
     classification = False
-    print("config:")
     # Pydantic v2 compatibility: .dict() -> .model_dump()
-    try:
-        tmp = config.model_dump()
-    except AttributeError:
-        tmp = config.dict()
-    f = open(os.path.join(config.output_dir, "config.json"), "w")
-    f.write(json.dumps(tmp, indent=4))
-    f.close()
+    # try:
+    #     tmp = config.model_dump()
+    # except AttributeError:
+    #     tmp = config.dict()
+    # f = open(os.path.join(config.output_dir, "config.json"), "w")
+    # f.write(json.dumps(tmp, indent=4))
+    # f.close()
     global tmp_output_dir
     tmp_output_dir = config.output_dir
-    pprint.pprint(tmp) 
+
     if config.classification_threshold is not None:
         classification = True
     if config.random_seed is not None:
@@ -193,7 +189,7 @@ def train_main(
     if not train_val_test_loaders:
         raise ValueError(
             "train_val_test_loaders must be provided. "
-            "For custom datasets, use train_custom_icomformer() from comformer.custom_train module. "
+            "For custom datasets, use train_from_list() from comformer.custom_train module. "
             "Predefined datasets (dft_3d, megnet, mpf) are no longer supported."
         )
     else:
@@ -206,6 +202,33 @@ def train_main(
             mean_train = train_val_test_loaders[4]
         if len(train_val_test_loaders) > 5:
             std_train = train_val_test_loaders[5]
+
+    if mean_train is None:
+        mean_train = 0.0
+        print('mean train is none! set to 0.0!')
+    else:
+        print('mean train:', mean_train)
+    if std_train is None:
+        std_train = 1.0
+        print('std train is none! set to 1.0!')
+    else:
+        print('std train:', std_train)
+
+    # Save normalization statistics to config if available
+    config.mean_train = mean_train
+    config.std_train = std_train
+
+    # Save config with normalization statistics
+    try:
+        tmp = config.model_dump()
+    except AttributeError:
+        tmp = config.dict()
+    with open(os.path.join(config.output_dir, "config.json"), "w") as f:
+        f.write(json.dumps(tmp, indent=4))
+    print("config:")
+    pprint.pprint(tmp) 
+    print(f"Saved config.json with normalization statistics: mean_train={mean_train}, std_train={std_train}")
+
     prepare_batch = partial(prepare_batch, device=device)
     if classification:
         config.model.classification = True
@@ -214,10 +237,6 @@ def train_main(
         "iComformer" : iComformer,
         "eComformer" : eComformer,
     }
-    if std_train is None:
-        std_train = 1.0
-        print('std train is none!')
-    print('std train:', std_train)
     if model is None:
         net = _model.get(config.model.name)(config.model)
         print("config:")
@@ -306,38 +325,6 @@ def train_main(
         prepare_batch=prepare_batch,
         device=device,
     )
-    if test_only:
-        checkpoint_tmp = torch.load('/data/keqiangyan/Matformer/matformer/scripts/jarvis_results_new/ehull_inv_25nei/checkpoint_500.pt')
-        to_load = {
-            "model": net,
-            "optimizer": optimizer,
-            "lr_scheduler": scheduler,
-            "trainer": trainer,
-        }
-        Checkpoint.load_objects(to_load=to_load, checkpoint=checkpoint_tmp)
-        net.eval()
-        targets = []
-        predictions = []
-        import time
-        t1 = time.time()
-        with torch.no_grad():
-            for dat in test_loader:
-                g, lg, _, target = dat
-                out_data = net([g.to(device), lg.to(device), _.to(device)])
-                out_data = out_data.cpu().numpy().tolist()
-                target = target.cpu().numpy().flatten().tolist()
-                if len(target) == 1:
-                    target = target[0]
-                targets.append(target)
-                predictions.append(out_data)
-        t2 = time.time()
-        f.close()
-        from sklearn.metrics import mean_absolute_error
-        targets = np.array(targets) * std_train
-        predictions = np.array(predictions) * std_train
-        print("Test MAE:", mean_absolute_error(targets, predictions))
-        print("Total test time:", t2-t1)
-        return mean_absolute_error(targets, predictions)
 
     # ignite event handlers:
     trainer.add_event_handler(Events.EPOCH_COMPLETED, TerminateOnNan())
@@ -572,16 +559,16 @@ def train_main(
             for dat in tqdm(test_loader):
                 g, lg, _, target = dat
                 out_data = net([g.to(device), lg.to(device), _.to(device)])
-                out_data = out_data.cpu().numpy().tolist()
+                out_data = out_data.cpu().numpy().flatten().tolist()
                 target = target.cpu().numpy().flatten().tolist()
-                if len(target) == 1:
-                    target = target[0]
-                targets.append(target)
-                predictions.append(out_data)
+                # if len(target) == 1:
+                #     target = target[0]
+                targets.extend(target)
+                predictions.extend(out_data)
         t2 = time.time()
         from sklearn.metrics import mean_absolute_error
-        targets = np.array(targets) * std_train
-        predictions = np.array(predictions) * std_train
+        targets = np.array(targets) * std_train + mean_train
+        predictions = np.array(predictions) * std_train + mean_train
         test_mae = mean_absolute_error(targets, predictions)
         print("Test MAE:", test_mae)
 

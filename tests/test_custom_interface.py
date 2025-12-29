@@ -2,7 +2,7 @@
 """Test script for custom training interface."""
 
 from pymatgen.core import Lattice, Structure
-from comformer.custom_train import train_custom_icomformer, pymatgen_to_jarvis
+from comformer.custom_train import train_from_list, pymatgen_to_jarvis
 import numpy as np
 
 
@@ -64,7 +64,7 @@ def test_small_dataset():
     print("\nStarting training (test mode, only 5 epochs)...\n")
 
     try:
-        results = train_custom_icomformer(
+        results = train_from_list(
             strucs=strucs,
             labels=labels,
             learning_rate=0.001,

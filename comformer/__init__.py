@@ -5,12 +5,14 @@ __author__ = "Junwu Chen"
 __email__ = "junwu.chen@epfl.ch"
 
 # Expose main interfaces for easy import
-from comformer.custom_train import train_custom_icomformer as train_model
-from comformer.predict import load_predictor, ComformerPredictor
+from comformer.custom_train import train_from_list, train_from_extxyz
+from comformer.predict import load_predictor, load_predictor_hf, ComformerPredictor
 
 __all__ = [
-    "train_model",
+    "train_from_list",
+    "train_from_extxyz",
     "load_predictor",
+    "load_predictor_hf",
     "ComformerPredictor",
     "__version__",
 ]

@@ -225,7 +225,20 @@ def train_main(
     `config` should conform to matformer.conf.TrainingConfig, and
     if passed as a dict with matching keys, pydantic validation is used
     """
-    # Setup distributed training first
+    # Convert config to TrainingConfig object first if it's a dict
+    if type(config) is dict:
+        try:
+            config = TrainingConfig(**config)
+        except Exception as exp:
+            print("Check", exp)
+            print('error in converting to training config!')
+            # If validation fails, raise the error to prevent further issues
+            raise ValueError(
+                f"Configuration validation failed: {exp}\n"
+                "Please check your configuration parameters."
+            ) from exp
+
+    # Now setup distributed training with the TrainingConfig object
     rank, local_rank, world_size, is_distributed = setup_distributed(config)
     is_main = is_main_process(rank)
 
@@ -240,18 +253,7 @@ def train_main(
     # Only print from main process
     if is_main:
         print(config)
-    if type(config) is dict:
-        try:
-            config = TrainingConfig(**config)
-        except Exception as exp:
-            if is_main:
-                print("Check", exp)
-                print('error in converting to training config!')
-            # If validation fails, raise the error to prevent further issues
-            raise ValueError(
-                f"Configuration validation failed: {exp}\n"
-                "Please check your configuration parameters."
-            ) from exp
+
     import os
 
     # Only main process creates output directory

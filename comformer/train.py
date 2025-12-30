@@ -619,7 +619,7 @@ def train_main(
             predictions_tensor = torch.tensor(predictions, device=device, dtype=torch.long)
 
             # Gather sizes from all processes
-            local_size = torch.tensor([len(targets)], device=device)
+            local_size = torch.tensor([len(targets)], device=device, dtype=torch.long)
             size_list = [torch.zeros(1, dtype=torch.long, device=device) for _ in range(world_size)]
             torch.distributed.all_gather(size_list, local_size)
 
@@ -758,12 +758,12 @@ def train_main(
 
         # In distributed training, gather predictions from all GPUs
         if is_distributed:
-            # Convert to tensors for gathering
-            targets_tensor = torch.tensor(targets, device=device)
-            predictions_tensor = torch.tensor(predictions, device=device)
+            # Convert to tensors for gathering (explicitly use float32)
+            targets_tensor = torch.tensor(targets, device=device, dtype=torch.float32)
+            predictions_tensor = torch.tensor(predictions, device=device, dtype=torch.float32)
 
             # Gather sizes from all processes
-            local_size = torch.tensor([len(targets)], device=device)
+            local_size = torch.tensor([len(targets)], device=device, dtype=torch.long)
             size_list = [torch.zeros(1, dtype=torch.long, device=device) for _ in range(world_size)]
             torch.distributed.all_gather(size_list, local_size)
 
@@ -774,16 +774,16 @@ def train_main(
             if len(targets) < max_size:
                 targets_tensor = torch.cat([
                     targets_tensor,
-                    torch.zeros(max_size - len(targets), device=device)
+                    torch.zeros(max_size - len(targets), device=device, dtype=torch.float32)
                 ])
                 predictions_tensor = torch.cat([
                     predictions_tensor,
-                    torch.zeros(max_size - len(predictions), device=device)
+                    torch.zeros(max_size - len(predictions), device=device, dtype=torch.float32)
                 ])
 
             # Gather from all processes
-            gathered_targets = [torch.zeros(max_size, device=device) for _ in range(world_size)]
-            gathered_predictions = [torch.zeros(max_size, device=device) for _ in range(world_size)]
+            gathered_targets = [torch.zeros(max_size, device=device, dtype=torch.float32) for _ in range(world_size)]
+            gathered_predictions = [torch.zeros(max_size, device=device, dtype=torch.float32) for _ in range(world_size)]
 
             torch.distributed.all_gather(gathered_targets, targets_tensor)
             torch.distributed.all_gather(gathered_predictions, predictions_tensor)

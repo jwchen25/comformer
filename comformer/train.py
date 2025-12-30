@@ -365,7 +365,7 @@ def train_main(
             net,
             device_ids=[local_rank] if torch.cuda.is_available() else None,
             output_device=local_rank if torch.cuda.is_available() else None,
-            find_unused_parameters=False
+            find_unused_parameters=True  # Set to True to handle unused parameters
         )
         if is_main:
             print(f"Model wrapped with DistributedDataParallel on device {device}")

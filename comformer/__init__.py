@@ -1,6 +1,6 @@
 """ComFormer: Complete and Efficient Graph Transformers for Crystal Material Property Prediction."""
 
-__version__ = "2025.12.29"
+__version__ = "2025.12.30"
 __author__ = "Junwu Chen"
 __email__ = "junwu.chen@epfl.ch"
 

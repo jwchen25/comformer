@@ -747,27 +747,59 @@ def train_from_list(
     # Use larger batch size for test set (much faster inference)
     test_batch_size = min(batch_size * 4, 128)  # Use 4x training batch size or 128, whichever is smaller
 
-    # Create samplers for distributed training
+    # Initialize distributed training environment early if needed
     from torch.utils.data import DistributedSampler
+    import torch.distributed as dist
+
     train_sampler = None
     val_sampler = None
     test_sampler = None
 
     if distributed:
-        train_sampler = DistributedSampler(
-            train_dataset,
-            shuffle=True,
-            seed=split_seed
-        )
-        val_sampler = DistributedSampler(
-            val_dataset,
-            shuffle=False
-        )
-        test_sampler = DistributedSampler(
-            test_dataset,
-            shuffle=False
-        )
-        print("Distributed training enabled: using DistributedSampler")
+        # Initialize distributed environment if not already initialized
+        if not dist.is_initialized():
+            print("Initializing distributed environment for DataLoader creation...")
+
+            # Get distributed parameters from environment variables (set by torchrun)
+            rank = int(os.environ.get("RANK", 0))
+            local_rank = int(os.environ.get("LOCAL_RANK", 0))
+            world_size = int(os.environ.get("WORLD_SIZE", 1))
+
+            if world_size > 1:
+                # Initialize process group
+                dist.init_process_group(
+                    backend="nccl" if torch.cuda.is_available() else "gloo",
+                    init_method="env://",
+                    world_size=world_size,
+                    rank=rank
+                )
+
+                # Set CUDA device for this process
+                if torch.cuda.is_available():
+                    torch.cuda.set_device(local_rank)
+
+                if rank == 0:
+                    print(f"Distributed environment initialized: world_size={world_size}, rank={rank}")
+            else:
+                print("WARNING: distributed=True but WORLD_SIZE=1. Running on single GPU.")
+                distributed = False
+
+        # Create DistributedSamplers if distributed environment is ready
+        if dist.is_initialized():
+            train_sampler = DistributedSampler(
+                train_dataset,
+                shuffle=True,
+                seed=split_seed
+            )
+            val_sampler = DistributedSampler(
+                val_dataset,
+                shuffle=False
+            )
+            test_sampler = DistributedSampler(
+                test_dataset,
+                shuffle=False
+            )
+            print("Created DistributedSamplers for data partitioning across GPUs")
 
     train_loader = DataLoader(
         train_dataset,

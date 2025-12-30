@@ -64,6 +64,25 @@ def setup_distributed(config: TrainingConfig):
     if not config.distributed:
         return 0, 0, 1, False
 
+    # Check if already initialized (might be initialized early in train_from_list)
+    if torch.distributed.is_initialized():
+        rank = torch.distributed.get_rank()
+        world_size = torch.distributed.get_world_size()
+        local_rank = int(os.environ.get("LOCAL_RANK", config.local_rank))
+
+        # Update config with actual values
+        config.rank = rank
+        config.local_rank = local_rank
+        config.world_size = world_size
+
+        if rank == 0:
+            print(f"Using existing distributed environment:")
+            print(f"  World size: {world_size}")
+            print(f"  Rank: {rank}")
+            print(f"  Local rank: {local_rank}")
+
+        return rank, local_rank, world_size, True
+
     # Get distributed parameters from environment variables (set by torchrun)
     rank = int(os.environ.get("RANK", config.rank))
     local_rank = int(os.environ.get("LOCAL_RANK", config.local_rank))
@@ -75,13 +94,12 @@ def setup_distributed(config: TrainingConfig):
     config.world_size = world_size
 
     # Initialize process group
-    if not torch.distributed.is_initialized():
-        torch.distributed.init_process_group(
-            backend=config.dist_backend,
-            init_method=config.dist_url,
-            world_size=world_size,
-            rank=rank
-        )
+    torch.distributed.init_process_group(
+        backend=config.dist_backend,
+        init_method=config.dist_url,
+        world_size=world_size,
+        rank=rank
+    )
 
     # Set device for this process
     if torch.cuda.is_available():

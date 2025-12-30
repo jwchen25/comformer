@@ -596,53 +596,95 @@ def train_main(
         tb_logger.writer.add_hparams(config, {"hparam/test_loss": test_loss})
         tb_logger.close()
 
-    # Prediction writing (only on main process)
-    if config.write_predictions and classification and is_main:
+    # Prediction writing (classification)
+    if config.write_predictions and classification:
         net.eval()
-        f = open(
-            os.path.join(config.output_dir, "prediction_results_test_set.csv"),
-            "w",
-        )
-        f.write("id,target,prediction\n")
         targets = []
         predictions = []
         with torch.no_grad():
-            # In distributed training, iterate only through available data
-            sample_id = 0
             for dat in test_loader:
                 g, lg, target = dat
                 out_data = net([g.to(device), lg.to(device)])
-                # out_data = torch.exp(out_data.cpu())
                 top_p, top_class = torch.topk(torch.exp(out_data), k=1)
                 target = int(target.cpu().numpy().flatten().tolist()[0])
-
-                f.write("%d, %d, %d\n" % (sample_id, (target), (top_class)))
                 targets.append(target)
                 predictions.append(
                     top_class.cpu().numpy().flatten().tolist()[0]
                 )
-                sample_id += 1
-        f.close()
-        from sklearn.metrics import roc_auc_score
 
-        print("predictions", predictions)
-        print("targets", targets)
-        print(
-            "Test ROCAUC:",
-            roc_auc_score(np.array(targets), np.array(predictions)),
-        )
+        # In distributed training, gather predictions from all GPUs
+        if is_distributed:
+            # Convert to tensors for gathering
+            targets_tensor = torch.tensor(targets, device=device, dtype=torch.long)
+            predictions_tensor = torch.tensor(predictions, device=device, dtype=torch.long)
+
+            # Gather sizes from all processes
+            local_size = torch.tensor([len(targets)], device=device)
+            size_list = [torch.zeros(1, dtype=torch.long, device=device) for _ in range(world_size)]
+            torch.distributed.all_gather(size_list, local_size)
+
+            # Prepare padded tensors for gathering
+            max_size = max([s.item() for s in size_list])
+
+            # Pad tensors to max_size
+            if len(targets) < max_size:
+                targets_tensor = torch.cat([
+                    targets_tensor,
+                    torch.zeros(max_size - len(targets), device=device, dtype=torch.long)
+                ])
+                predictions_tensor = torch.cat([
+                    predictions_tensor,
+                    torch.zeros(max_size - len(predictions), device=device, dtype=torch.long)
+                ])
+
+            # Gather from all processes
+            gathered_targets = [torch.zeros(max_size, device=device, dtype=torch.long) for _ in range(world_size)]
+            gathered_predictions = [torch.zeros(max_size, device=device, dtype=torch.long) for _ in range(world_size)]
+
+            torch.distributed.all_gather(gathered_targets, targets_tensor)
+            torch.distributed.all_gather(gathered_predictions, predictions_tensor)
+
+            # Only main process processes the gathered results
+            if is_main:
+                # Concatenate and trim to actual sizes
+                all_targets = []
+                all_predictions = []
+                for i in range(world_size):
+                    size = size_list[i].item()
+                    all_targets.extend(gathered_targets[i][:size].cpu().numpy().tolist())
+                    all_predictions.extend(gathered_predictions[i][:size].cpu().numpy().tolist())
+
+                targets = all_targets
+                predictions = all_predictions
+
+        # Only main process saves results
+        if is_main:
+            f = open(
+                os.path.join(config.output_dir, "prediction_results_test_set.csv"),
+                "w",
+            )
+            f.write("id,target,prediction\n")
+            for idx, (target, pred) in enumerate(zip(targets, predictions)):
+                f.write("%d, %d, %d\n" % (idx, target, pred))
+            f.close()
+
+            from sklearn.metrics import roc_auc_score
+            print("predictions", predictions)
+            print("targets", targets)
+            print(f"Total test samples: {len(targets)}")
+            print(
+                "Test ROCAUC:",
+                roc_auc_score(np.array(targets), np.array(predictions)),
+            )
 
     if (
         config.write_predictions
         and not classification
         and config.model.output_features > 1
-        and is_main
     ):
         net.eval()
         mem = []
         with torch.no_grad():
-            # In distributed training, iterate only through available data
-            sample_id = 0
             for dat in test_loader:
                 g, lg, target = dat
                 out_data = net([g.to(device), lg.to(device)])
@@ -651,108 +693,182 @@ def train_main(
                     sc = pk.load(open("sc.pkl", "rb"))
                     out_data = list(
                         sc.transform(np.array(out_data).reshape(1, -1))[0]
-                    )  # [0][0]
+                    )
                 target = target.cpu().numpy().flatten().tolist()
                 info = {}
-                info["id"] = sample_id
                 info["target"] = target
                 info["predictions"] = out_data
                 mem.append(info)
-                sample_id += 1
-        dumpjson(
-            filename=os.path.join(
-                config.output_dir, "multi_out_predictions.json"
-            ),
-            data=mem,
-        )
+
+        # In distributed training, gather predictions from all GPUs
+        if is_distributed:
+            # Gather all mem lists from all processes
+            gathered_mem = [None] * world_size
+            torch.distributed.all_gather_object(gathered_mem, mem)
+
+            # Only main process merges and saves
+            if is_main:
+                all_mem = []
+                for i, process_mem in enumerate(gathered_mem):
+                    all_mem.extend(process_mem)
+
+                # Add sequential IDs
+                for idx, item in enumerate(all_mem):
+                    item["id"] = idx
+
+                mem = all_mem
+        else:
+            # Single GPU: add sequential IDs
+            for idx, item in enumerate(mem):
+                item["id"] = idx
+
+        # Only main process saves results
+        if is_main:
+            print(f"Total test samples: {len(mem)}")
+            dumpjson(
+                filename=os.path.join(
+                    config.output_dir, "multi_out_predictions.json"
+                ),
+                data=mem,
+            )
 
     if (
         config.write_predictions
         and not classification
         and config.model.output_features == 1
-        and is_main
     ):
         net.eval()
         targets = []
         predictions = []
-        import time
-        t1 = time.time()
         with torch.no_grad():
             from tqdm import tqdm
-            for dat in tqdm(test_loader):
+            # Show progress bar only on main process
+            iterator = tqdm(test_loader) if is_main else test_loader
+            for dat in iterator:
                 g, lg, _, target = dat
                 out_data = net([g.to(device), lg.to(device), _.to(device)])
                 out_data = out_data.cpu().numpy().flatten().tolist()
                 target = target.cpu().numpy().flatten().tolist()
-                # if len(target) == 1:
-                #     target = target[0]
                 targets.extend(target)
                 predictions.extend(out_data)
-        t2 = time.time()
-        from sklearn.metrics import mean_absolute_error
+
+        # Convert to numpy arrays (normalized)
         targets = np.array(targets) * std_train + mean_train
         predictions = np.array(predictions) * std_train + mean_train
-        test_mae = mean_absolute_error(targets, predictions)
-        print("Test MAE:", test_mae)
 
-        # Generate sample IDs based on actual predictions length
-        # In distributed training, test_loader may only contain a subset of data
-        sample_ids = list(range(len(targets)))
+        # In distributed training, gather predictions from all GPUs
+        if is_distributed:
+            # Convert to tensors for gathering
+            targets_tensor = torch.tensor(targets, device=device)
+            predictions_tensor = torch.tensor(predictions, device=device)
 
-        # Flatten predictions if needed
-        predictions_flat = predictions.flatten()
-        targets_flat = targets.flatten()
+            # Gather sizes from all processes
+            local_size = torch.tensor([len(targets)], device=device)
+            size_list = [torch.zeros(1, dtype=torch.long, device=device) for _ in range(world_size)]
+            torch.distributed.all_gather(size_list, local_size)
 
-        # Create DataFrame with predictions and targets
-        results_df = pd.DataFrame({
-            'id': sample_ids,
-            'target': targets_flat,
-            'prediction': predictions_flat
-        })
+            # Prepare padded tensors for gathering
+            max_size = max([s.item() for s in size_list])
 
-        # Save to CSV file in output_dir
-        csv_path = os.path.join(config.output_dir, 'test_predictions.csv')
-        results_df.to_csv(csv_path, index=False)
-        print(f"Predictions saved to: {csv_path}")
+            # Pad tensors to max_size
+            if len(targets) < max_size:
+                targets_tensor = torch.cat([
+                    targets_tensor,
+                    torch.zeros(max_size - len(targets), device=device)
+                ])
+                predictions_tensor = torch.cat([
+                    predictions_tensor,
+                    torch.zeros(max_size - len(predictions), device=device)
+                ])
 
-        # Create correlation plot with metrics
-        # Calculate R2 score
-        r2 = r2_score(targets_flat, predictions_flat)
+            # Gather from all processes
+            gathered_targets = [torch.zeros(max_size, device=device) for _ in range(world_size)]
+            gathered_predictions = [torch.zeros(max_size, device=device) for _ in range(world_size)]
 
-        # Calculate RMSE
-        rmse = np.sqrt(np.mean((targets_flat - predictions_flat) ** 2))
+            torch.distributed.all_gather(gathered_targets, targets_tensor)
+            torch.distributed.all_gather(gathered_predictions, predictions_tensor)
 
-        # Create figure
-        plt.figure(figsize=(8, 8))
+            # Only main process processes the gathered results
+            if is_main:
+                # Concatenate and trim to actual sizes
+                all_targets = []
+                all_predictions = []
+                for i in range(world_size):
+                    size = size_list[i].item()
+                    all_targets.append(gathered_targets[i][:size].cpu().numpy())
+                    all_predictions.append(gathered_predictions[i][:size].cpu().numpy())
 
-        # Scatter plot
-        plt.scatter(targets_flat, predictions_flat, alpha=0.6, s=50, edgecolors='k', linewidth=0.5)
+                targets_flat = np.concatenate(all_targets)
+                predictions_flat = np.concatenate(all_predictions)
+            else:
+                # Non-main processes don't need the data
+                targets_flat = None
+                predictions_flat = None
+        else:
+            # Single GPU training
+            targets_flat = targets
+            predictions_flat = predictions
 
-        # Add reference line (perfect prediction)
-        min_val = min(targets_flat.min(), predictions_flat.min())
-        max_val = max(targets_flat.max(), predictions_flat.max())
-        plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect prediction')
+        # Only main process saves results and creates plots
+        if is_main:
+            from sklearn.metrics import mean_absolute_error
+            test_mae = mean_absolute_error(targets_flat, predictions_flat)
+            print(f"Test MAE: {test_mae}")
+            print(f"Total test samples: {len(targets_flat)}")
 
-        # Add labels and title
-        plt.xlabel('True Values', fontsize=12, fontweight='bold')
-        plt.ylabel('Predicted Values', fontsize=12, fontweight='bold')
-        plt.title('Test Set: Predicted vs True Values', fontsize=14, fontweight='bold')
+            # Generate sample IDs
+            sample_ids = list(range(len(targets_flat)))
 
-        # Add metrics as text annotation
-        metrics_text = f'R² = {r2:.4f}\nMAE = {test_mae:.4f}\nRMSE = {rmse:.4f}\nN = {len(targets_flat)}'
-        plt.text(0.05, 0.95, metrics_text, transform=plt.gca().transAxes,
-                fontsize=11, verticalalignment='top',
-                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+            # Create DataFrame with predictions and targets
+            results_df = pd.DataFrame({
+                'id': sample_ids,
+                'target': targets_flat,
+                'prediction': predictions_flat
+            })
 
-        plt.legend(fontsize=10)
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
+            # Save to CSV file in output_dir
+            csv_path = os.path.join(config.output_dir, 'test_predictions.csv')
+            results_df.to_csv(csv_path, index=False)
+            print(f"Predictions saved to: {csv_path}")
 
-        # Save plot as JPG
-        plot_path = os.path.join(config.output_dir, 'test_predictions_correlation.jpg')
-        plt.savefig(plot_path, format='jpg', dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"Correlation plot saved to: {plot_path}")
+            # Create correlation plot with metrics
+            # Calculate R2 score
+            r2 = r2_score(targets_flat, predictions_flat)
+
+            # Calculate RMSE
+            rmse = np.sqrt(np.mean((targets_flat - predictions_flat) ** 2))
+
+            # Create figure
+            plt.figure(figsize=(8, 8))
+
+            # Scatter plot
+            plt.scatter(targets_flat, predictions_flat, alpha=0.6, s=50, edgecolors='k', linewidth=0.5)
+
+            # Add reference line (perfect prediction)
+            min_val = min(targets_flat.min(), predictions_flat.min())
+            max_val = max(targets_flat.max(), predictions_flat.max())
+            plt.plot([min_val, max_val], [min_val, max_val], 'r--', linewidth=2, label='Perfect prediction')
+
+            # Add labels and title
+            plt.xlabel('True Values', fontsize=12, fontweight='bold')
+            plt.ylabel('Predicted Values', fontsize=12, fontweight='bold')
+            plt.title('Test Set: Predicted vs True Values', fontsize=14, fontweight='bold')
+
+            # Add metrics as text annotation
+            metrics_text = f'R² = {r2:.4f}\nMAE = {test_mae:.4f}\nRMSE = {rmse:.4f}\nN = {len(targets_flat)}'
+            plt.text(0.05, 0.95, metrics_text, transform=plt.gca().transAxes,
+                    fontsize=11, verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+            plt.legend(fontsize=10)
+            plt.grid(True, alpha=0.3)
+            plt.tight_layout()
+
+            # Save plot as JPG
+            plot_path = os.path.join(config.output_dir, 'test_predictions_correlation.jpg')
+            plt.savefig(plot_path, format='jpg', dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"Correlation plot saved to: {plot_path}")
 
     # Clean up distributed training
     if is_distributed:

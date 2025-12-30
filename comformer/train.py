@@ -46,6 +46,68 @@ if torch.cuda.is_available():
     device = torch.device("cuda")
 
 
+def setup_distributed(config: TrainingConfig):
+    """
+    Initialize distributed training environment.
+
+    For PyTorch >= 2.6, uses environment variables set by torchrun:
+    - RANK: Global rank
+    - LOCAL_RANK: Local rank (GPU index on current node)
+    - WORLD_SIZE: Total number of processes
+
+    Args:
+        config: Training configuration
+
+    Returns:
+        Tuple of (rank, local_rank, world_size, is_distributed)
+    """
+    if not config.distributed:
+        return 0, 0, 1, False
+
+    # Get distributed parameters from environment variables (set by torchrun)
+    rank = int(os.environ.get("RANK", config.rank))
+    local_rank = int(os.environ.get("LOCAL_RANK", config.local_rank))
+    world_size = int(os.environ.get("WORLD_SIZE", config.world_size))
+
+    # Update config with actual values
+    config.rank = rank
+    config.local_rank = local_rank
+    config.world_size = world_size
+
+    # Initialize process group
+    if not torch.distributed.is_initialized():
+        torch.distributed.init_process_group(
+            backend=config.dist_backend,
+            init_method=config.dist_url,
+            world_size=world_size,
+            rank=rank
+        )
+
+    # Set device for this process
+    if torch.cuda.is_available():
+        torch.cuda.set_device(local_rank)
+
+    if rank == 0:
+        print(f"Distributed training initialized:")
+        print(f"  Backend: {config.dist_backend}")
+        print(f"  World size: {world_size}")
+        print(f"  Rank: {rank}")
+        print(f"  Local rank: {local_rank}")
+
+    return rank, local_rank, world_size, True
+
+
+def cleanup_distributed():
+    """Clean up distributed training process group."""
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()
+
+
+def is_main_process(rank: int) -> bool:
+    """Check if current process is the main process (rank 0)."""
+    return rank == 0
+
+
 class PolynomialLRDecay(torch.optim.lr_scheduler._LRScheduler):
     def __init__(self, optimizer, max_iters, start_lr, end_lr, power=1, last_epoch=-1):
         self.max_iters = max_iters
@@ -145,13 +207,28 @@ def train_main(
     `config` should conform to matformer.conf.TrainingConfig, and
     if passed as a dict with matching keys, pydantic validation is used
     """
-    print(config)
+    # Setup distributed training first
+    rank, local_rank, world_size, is_distributed = setup_distributed(config)
+    is_main = is_main_process(rank)
+
+    # Set device based on distributed setup
+    if is_distributed and torch.cuda.is_available():
+        device = torch.device(f"cuda:{local_rank}")
+    elif torch.cuda.is_available():
+        device = torch.device("cuda")
+    else:
+        device = torch.device("cpu")
+
+    # Only print from main process
+    if is_main:
+        print(config)
     if type(config) is dict:
         try:
             config = TrainingConfig(**config)
         except Exception as exp:
-            print("Check", exp)
-            print('error in converting to training config!')
+            if is_main:
+                print("Check", exp)
+                print('error in converting to training config!')
             # If validation fails, raise the error to prevent further issues
             raise ValueError(
                 f"Configuration validation failed: {exp}\n"
@@ -159,8 +236,13 @@ def train_main(
             ) from exp
     import os
 
-    if not os.path.exists(config.output_dir):
+    # Only main process creates output directory
+    if is_main and not os.path.exists(config.output_dir):
         os.makedirs(config.output_dir)
+
+    # Synchronize all processes
+    if is_distributed:
+        torch.distributed.barrier()
     checkpoint_dir = os.path.join(config.output_dir)
     deterministic = False
     classification = False
@@ -205,29 +287,34 @@ def train_main(
 
     if mean_train is None:
         mean_train = 0.0
-        print('mean train is none! set to 0.0!')
+        if is_main:
+            print('mean train is none! set to 0.0!')
     else:
-        print('mean train:', mean_train)
+        if is_main:
+            print('mean train:', mean_train)
     if std_train is None:
         std_train = 1.0
-        print('std train is none! set to 1.0!')
+        if is_main:
+            print('std train is none! set to 1.0!')
     else:
-        print('std train:', std_train)
+        if is_main:
+            print('std train:', std_train)
 
     # Save normalization statistics to config if available
     config.mean_train = mean_train
     config.std_train = std_train
 
-    # Save config with normalization statistics
-    try:
-        tmp = config.model_dump()
-    except AttributeError:
-        tmp = config.dict()
-    with open(os.path.join(config.output_dir, "config.json"), "w") as f:
-        f.write(json.dumps(tmp, indent=4))
-    print("config:")
-    pprint.pprint(tmp) 
-    print(f"Saved config.json with normalization statistics: mean_train={mean_train}, std_train={std_train}")
+    # Save config with normalization statistics (only on main process)
+    if is_main:
+        try:
+            tmp = config.model_dump()
+        except AttributeError:
+            tmp = config.dict()
+        with open(os.path.join(config.output_dir, "config.json"), "w") as f:
+            f.write(json.dumps(tmp, indent=4))
+        print("config:")
+        pprint.pprint(tmp)
+        print(f"Saved config.json with normalization statistics: mean_train={mean_train}, std_train={std_train}")
 
     prepare_batch = partial(prepare_batch, device=device)
     if classification:
@@ -239,34 +326,30 @@ def train_main(
     }
     if model is None:
         net = _model.get(config.model.name)(config.model)
-        print("config:")
-        # Pydantic v2 compatibility: .dict() -> .model_dump()
-        try:
-            pprint.pprint(config.model.model_dump())
-        except AttributeError:
-            pprint.pprint(config.model.dict())
+        if is_main:
+            print("config:")
+            # Pydantic v2 compatibility: .dict() -> .model_dump()
+            try:
+                pprint.pprint(config.model.model_dump())
+            except AttributeError:
+                pprint.pprint(config.model.dict())
     else:
         net = model
 
     net.to(device)
-    if config.distributed:
-        import torch.distributed as dist
-        import os
 
-        def setup(rank, world_size):
-            os.environ["MASTER_ADDR"] = "localhost"
-            os.environ["MASTER_PORT"] = "12355"
-
-            # initialize the process group
-            dist.init_process_group("gloo", rank=rank, world_size=world_size)
-
-        def cleanup():
-            dist.destroy_process_group()
-
-        setup(2, 2)
+    # Wrap model with DistributedDataParallel if distributed training is enabled
+    if is_distributed:
+        # For PyTorch >= 2.6, use DDP with proper device_ids
         net = torch.nn.parallel.DistributedDataParallel(
-            net
+            net,
+            device_ids=[local_rank] if torch.cuda.is_available() else None,
+            output_device=local_rank if torch.cuda.is_available() else None,
+            find_unused_parameters=False
         )
+        if is_main:
+            print(f"Model wrapped with DistributedDataParallel on device {device}")
+
     params = group_decay(net)
     optimizer = setup_optimizer(params, config)
 
@@ -333,9 +416,13 @@ def train_main(
     trainer.add_event_handler(
         Events.ITERATION_COMPLETED, lambda engine: scheduler.step()
     )
-    count_parameters(net)
 
-    if config.write_checkpoint:
+    # Only print model parameters from main process
+    if is_main:
+        count_parameters(net)
+
+    # Checkpoint saving (only on main process)
+    if config.write_checkpoint and is_main:
         # model checkpointing - save every epoch
         to_save = {
             "model": net,
@@ -369,7 +456,9 @@ def train_main(
                     print(f"\n✓ Saved best model to {best_model_path} (MAE: {-score:.4f})")
 
         evaluator.add_event_handler(Events.EPOCH_COMPLETED, save_best_model)
-    if config.progress:
+
+    # Progress bar (only on main process)
+    if config.progress and is_main:
         pbar = ProgressBar()
         pbar.attach(trainer, output_transform=lambda x: {"loss": x})
         # pbar.attach(evaluator,output_transform=lambda x: {"mae": x})
@@ -403,8 +492,8 @@ def train_main(
 
             history["validation"][metric].append(vm)
 
-        
-        
+
+
         epoch_num = len(history["validation"][t_metric])
         if epoch_num % 20 == 0:
             train_evaluator.run(train_loader)
@@ -421,7 +510,8 @@ def train_main(
             tmetrics = {}
             tmetrics['mae'] = -1
 
-        if config.store_outputs:
+        # Only save outputs from main process
+        if config.store_outputs and is_main:
             history["EOS"] = eos.data
             history["trainEOS"] = train_eos.data
             dumpjson(
@@ -432,7 +522,9 @@ def train_main(
                 filename=os.path.join(config.output_dir, "history_train.json"),
                 data=history["train"],
             )
-        if config.progress:
+
+        # Only print progress from main process
+        if config.progress and is_main:
             pbar = ProgressBar()
             if not classification:
                 pbar.log_message(f"Val_MAE: {vmetrics['mae']:.4f}")
@@ -457,31 +549,35 @@ def train_main(
             trainer=trainer,
         )
         evaluator.add_event_handler(Events.EPOCH_COMPLETED, es_handler)
-    # optionally log results to tensorboard
-    if config.log_tensorboard:
 
+    # optionally log results to tensorboard (only on main process)
+    if config.log_tensorboard and is_main:
         tb_logger = TensorboardLogger(
             log_dir=os.path.join(config.output_dir, "tb_logs", "test")
         )
-        for tag, evaluator in [
+        for tag, evaluator_tb in [
             ("training", train_evaluator),
             ("validation", evaluator),
         ]:
             tb_logger.attach_output_handler(
-                evaluator,
+                evaluator_tb,
                 event_name=Events.EPOCH_COMPLETED,
                 tag=tag,
                 metric_names=["loss", "mae"],
                 global_step_transform=global_step_from_engine(trainer),
             )
 
+    # Run training
     trainer.run(train_loader, max_epochs=config.epochs)
 
-    if config.log_tensorboard:
+    # TensorBoard cleanup (only on main process)
+    if config.log_tensorboard and is_main:
         test_loss = evaluator.state.metrics["loss"]
         tb_logger.writer.add_hparams(config, {"hparam/test_loss": test_loss})
         tb_logger.close()
-    if config.write_predictions and classification:
+
+    # Prediction writing (only on main process)
+    if config.write_predictions and classification and is_main:
         net.eval()
         f = open(
             os.path.join(config.output_dir, "prediction_results_test_set.csv"),
@@ -518,6 +614,7 @@ def train_main(
         config.write_predictions
         and not classification
         and config.model.output_features > 1
+        and is_main
     ):
         net.eval()
         mem = []
@@ -544,10 +641,12 @@ def train_main(
             ),
             data=mem,
         )
+
     if (
         config.write_predictions
         and not classification
         and config.model.output_features == 1
+        and is_main
     ):
         net.eval()
         targets = []
@@ -633,6 +732,10 @@ def train_main(
         plt.savefig(plot_path, format='jpg', dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Correlation plot saved to: {plot_path}")
+
+    # Clean up distributed training
+    if is_distributed:
+        cleanup_distributed()
 
     return history
 

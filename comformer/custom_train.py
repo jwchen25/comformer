@@ -542,6 +542,8 @@ def train_from_list(
     random_seed: Optional[int] = None,
     cache_graphs: bool = False,
     graph_cache_dir: Optional[str] = None,
+    # Distributed training parameters
+    distributed: bool = False,
     **kwargs,
 ):
     """
@@ -745,10 +747,33 @@ def train_from_list(
     # Use larger batch size for test set (much faster inference)
     test_batch_size = min(batch_size * 4, 128)  # Use 4x training batch size or 128, whichever is smaller
 
+    # Create samplers for distributed training
+    from torch.utils.data import DistributedSampler
+    train_sampler = None
+    val_sampler = None
+    test_sampler = None
+
+    if distributed:
+        train_sampler = DistributedSampler(
+            train_dataset,
+            shuffle=True,
+            seed=split_seed
+        )
+        val_sampler = DistributedSampler(
+            val_dataset,
+            shuffle=False
+        )
+        test_sampler = DistributedSampler(
+            test_dataset,
+            shuffle=False
+        )
+        print("Distributed training enabled: using DistributedSampler")
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=(train_sampler is None),  # Only shuffle if not using sampler
+        sampler=train_sampler,
         collate_fn=collate_fn,
         drop_last=True,
         num_workers=num_workers,
@@ -760,6 +785,7 @@ def train_from_list(
         val_dataset,
         batch_size=batch_size,
         shuffle=False,
+        sampler=val_sampler,
         collate_fn=collate_fn,
         drop_last=True,
         num_workers=num_workers,
@@ -771,6 +797,7 @@ def train_from_list(
         test_dataset,
         batch_size=test_batch_size,  # Use larger batch size for testing
         shuffle=False,
+        sampler=test_sampler,
         collate_fn=collate_fn,
         drop_last=False,
         num_workers=num_workers,
@@ -807,6 +834,7 @@ def train_from_list(
         "neighbor_strategy": "k-nearest",
         "output_dir": output_dir,
         "id_tag": "id",
+        "distributed": distributed,
         "model": {
             "name": model_name,
             "use_angle": use_angle,
@@ -897,6 +925,8 @@ def train_from_extxyz(
     random_seed: Optional[int] = None,
     cache_graphs: bool = False,
     graph_cache_dir: Optional[str] = None,
+    # Distributed training parameters
+    distributed: bool = False,
     **kwargs,
 ):
     """
@@ -1039,6 +1069,7 @@ def train_from_extxyz(
         random_seed=random_seed,
         cache_graphs=cache_graphs,
         graph_cache_dir=graph_cache_dir,
+        distributed=distributed,
         **kwargs,
     )
 

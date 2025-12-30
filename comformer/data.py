@@ -11,7 +11,7 @@ import pandas as pd
 from jarvis.core.atoms import Atoms
 from comformer.graphs import PygGraph, PygStructureDataset
 from jarvis.db.figshare import data as jdata
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 import math
 from jarvis.db.jsonutils import dumpjson
@@ -234,6 +234,7 @@ def get_train_val_loaders(
     use_angle=False,
     use_save=True,
     mp_id_list=None,
+    distributed=False,
 ):
     """Help function to set up JARVIS train and val dataloaders."""
     # data loading
@@ -449,40 +450,66 @@ def get_train_val_loaders(
         std_train=std_train,
     )
 
-    
+
     collate_fn = train_data.collate
     if line_graph:
         collate_fn = train_data.collate_line_graph
+
+    # Create samplers for distributed training
+    train_sampler = None
+    val_sampler = None
+    test_sampler = None
+
+    if distributed:
+        train_sampler = DistributedSampler(
+            train_data,
+            shuffle=True,
+            seed=split_seed
+        )
+        val_sampler = DistributedSampler(
+            val_data,
+            shuffle=False
+        )
+        test_sampler = DistributedSampler(
+            test_data,
+            shuffle=False
+        )
 
     # use a regular pytorch dataloader
     train_loader = DataLoader(
         train_data,
         batch_size=batch_size,
-        shuffle=True,
+        shuffle=(train_sampler is None),  # Only shuffle if not using sampler
+        sampler=train_sampler,
         collate_fn=collate_fn,
         drop_last=True,
         num_workers=workers,
         pin_memory=pin_memory,
+        persistent_workers=True if workers > 0 else False,
     )
 
     val_loader = DataLoader(
         val_data,
         batch_size=batch_size,
         shuffle=False,
+        sampler=val_sampler,
         collate_fn=collate_fn,
         drop_last=True,
         num_workers=workers,
         pin_memory=pin_memory,
+        persistent_workers=True if workers > 0 else False,
     )
 
     test_loader = DataLoader(
         test_data,
         batch_size=1,
         shuffle=False,
+        sampler=test_sampler,
         collate_fn=collate_fn,
         drop_last=False,
         num_workers=workers,
         pin_memory=pin_memory,
+        persistent_workers=True if workers > 0 else False,
     )
     if save_dataloader:
         torch.save(train_loader, train_sample)

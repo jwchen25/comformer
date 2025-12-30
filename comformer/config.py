@@ -70,6 +70,12 @@ class TrainingConfig(BaseSettings):
     max_neighbors: int = 12
     keep_data_order: bool = False
     distributed: bool = False
+    # Distributed training parameters
+    world_size: int = 1  # Total number of processes (GPUs)
+    rank: int = 0  # Global rank of current process
+    local_rank: int = 0  # Local rank for multi-node training
+    dist_backend: Literal["nccl", "gloo"] = "nccl"  # Backend for distributed training
+    dist_url: str = "env://"  # URL for distributed training initialization
     n_early_stopping: Optional[int] = None  # typically 50
     output_dir: str = os.path.abspath(".")  # typically 50
     matrix_input: bool = False

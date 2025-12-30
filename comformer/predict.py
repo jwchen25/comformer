@@ -8,7 +8,7 @@ properties for new crystal structures.
 import json
 from pathlib import Path
 from typing import List, Union, Dict
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
 import numpy as np
 import torch
@@ -294,16 +294,21 @@ class ComformerPredictor:
 
                     # Determine optimal number of worker threads
                     # Automatically scale based on CPU core count, max 8 to avoid excessive GIL contention
-                    num_workers = min(cpu_count(), 8)
+                    num_workers = min(cpu_count(), 4)
 
                     # Run parallel graph conversion
-                    if len(batch_structures) > 1:
-                        with ThreadPoolExecutor(max_workers=num_workers) as executor:
+                    if len(batch_structures) > 25:
+                        with ProcessPoolExecutor(max_workers=num_workers) as executor:
                             indexed_batch = [(i, s) for i, s in enumerate(batch_structures)]
-                            results = list(executor.map(convert_structure_to_graph_with_index, indexed_batch))
+                            results = list(executor.map(
+                                convert_structure_to_graph_with_index,
+                                indexed_batch,
+                            ))
                     else:
-                        # For single structure, process directly to avoid thread overhead
-                        results = [convert_structure_to_graph_with_index((0, batch_structures[0]))]
+                        results = [
+                            convert_structure_to_graph_with_index((i, s))
+                            for i, s in enumerate(batch_structures)
+                        ]
 
                     # Process results and maintain original order
                     result_dict = {}

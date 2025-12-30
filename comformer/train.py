@@ -607,19 +607,21 @@ def train_main(
         targets = []
         predictions = []
         with torch.no_grad():
-            ids = test_loader.dataset.ids  # [test_loader.dataset.indices]
-            for dat, id in zip(test_loader, ids):
+            # In distributed training, iterate only through available data
+            sample_id = 0
+            for dat in test_loader:
                 g, lg, target = dat
                 out_data = net([g.to(device), lg.to(device)])
                 # out_data = torch.exp(out_data.cpu())
                 top_p, top_class = torch.topk(torch.exp(out_data), k=1)
                 target = int(target.cpu().numpy().flatten().tolist()[0])
 
-                f.write("%s, %d, %d\n" % (id, (target), (top_class)))
+                f.write("%d, %d, %d\n" % (sample_id, (target), (top_class)))
                 targets.append(target)
                 predictions.append(
                     top_class.cpu().numpy().flatten().tolist()[0]
                 )
+                sample_id += 1
         f.close()
         from sklearn.metrics import roc_auc_score
 
@@ -639,8 +641,9 @@ def train_main(
         net.eval()
         mem = []
         with torch.no_grad():
-            ids = test_loader.dataset.ids  # [test_loader.dataset.indices]
-            for dat, id in zip(test_loader, ids):
+            # In distributed training, iterate only through available data
+            sample_id = 0
+            for dat in test_loader:
                 g, lg, target = dat
                 out_data = net([g.to(device), lg.to(device)])
                 out_data = out_data.cpu().numpy().tolist()
@@ -651,10 +654,11 @@ def train_main(
                     )  # [0][0]
                 target = target.cpu().numpy().flatten().tolist()
                 info = {}
-                info["id"] = id
+                info["id"] = sample_id
                 info["target"] = target
                 info["predictions"] = out_data
                 mem.append(info)
+                sample_id += 1
         dumpjson(
             filename=os.path.join(
                 config.output_dir, "multi_out_predictions.json"
@@ -691,12 +695,9 @@ def train_main(
         test_mae = mean_absolute_error(targets, predictions)
         print("Test MAE:", test_mae)
 
-        # Save predictions to CSV file
-        # Get sample IDs from test dataset
-        if hasattr(test_loader.dataset, 'ids'):
-            sample_ids = test_loader.dataset.ids.tolist()
-        else:
-            sample_ids = list(range(len(targets)))
+        # Generate sample IDs based on actual predictions length
+        # In distributed training, test_loader may only contain a subset of data
+        sample_ids = list(range(len(targets)))
 
         # Flatten predictions if needed
         predictions_flat = predictions.flatten()

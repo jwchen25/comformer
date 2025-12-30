@@ -17,6 +17,7 @@ The package version of ComFormer model (ICLR 2024).
   - [Training from pymatgen](#from-pymatgen-structures)
   - [Training from ExtXYZ Files](#from-extxyz-files-ase)
   - [Large Dataset Optimization](#large-dataset-optimization)
+  - [Multi-GPU Training](#multi-gpu-training)
   - [Model Outputs](#model-outputs)
   - [Making Predictions by Loading Local Models](#making-predictions-by-loading-local-models)
   - [Making Predictions by Loading HuggingFace Models](#high-performance-prediction)
@@ -153,6 +154,43 @@ results = train_from_list(
 ```
 
 See [OPTIMIZATION_GUIDE.md](tutorial/OPTIMIZATION_GUIDE.md) for detailed benchmarks and tuning tips.
+
+### Multi-GPU Training
+
+ComFormer supports distributed data-parallel training across multiple GPUs using PyTorch's `torchrun`:
+
+```python
+# train_script.py
+from comformer.custom_train import train_from_list
+
+results = train_from_list(
+    strucs=structures,
+    labels=labels,
+    output_dir="./my_model",
+    n_epochs=100,
+    batch_size=32,
+    distributed=True  # Enable distributed training
+)
+```
+
+Launch training with multiple GPUs:
+```bash
+# Single-node multi-GPU (e.g., 4 GPUs)
+torchrun --nproc_per_node=4 train_script.py
+
+# Multi-node training (e.g., 2 nodes, 4 GPUs each)
+torchrun --nnodes=2 --nproc_per_node=4 \
+         --node_rank=0 --master_addr="192.168.1.1" \
+         --master_port=29500 train_script.py
+```
+
+**Key features:**
+- Automatic gradient synchronization across GPUs
+- Efficient data distribution with DistributedSampler
+- Linear scaling of training speed with number of GPUs
+- Compatible with all training interfaces (pymatgen, ExtXYZ, etc.)
+
+**Note:** Set `distributed=True` in `train_from_list()` or `train_from_extxyz()` when using `torchrun`.
 
 ### Model Outputs
 

@@ -292,23 +292,25 @@ class ComformerPredictor:
                         except Exception as e:
                             return (idx, None, str(e))
 
-                    # Determine optimal number of worker threads
-                    # Automatically scale based on CPU core count, max 8 to avoid excessive GIL contention
-                    num_workers = min(cpu_count(), 4)
-
                     # Run parallel graph conversion
-                    if len(batch_structures) > 25:
-                        with ProcessPoolExecutor(max_workers=num_workers) as executor:
-                            indexed_batch = [(i, s) for i, s in enumerate(batch_structures)]
-                            results = list(executor.map(
-                                convert_structure_to_graph_with_index,
-                                indexed_batch,
-                            ))
-                    else:
-                        results = [
-                            convert_structure_to_graph_with_index((i, s))
-                            for i, s in enumerate(batch_structures)
-                        ]
+                    # if len(batch_structures) > 25:
+                    #     num_workers = min(cpu_count(), 4)
+                    #     with ProcessPoolExecutor(max_workers=num_workers) as executor:
+                    #         indexed_batch = [(i, s) for i, s in enumerate(batch_structures)]
+                    #         results = list(executor.map(
+                    #             convert_structure_to_graph_with_index,
+                    #             indexed_batch,
+                    #         ))
+                    # else:
+                    #     results = [
+                    #         convert_structure_to_graph_with_index((i, s))
+                    #         for i, s in enumerate(batch_structures)
+                    #     ]
+
+                    results = [
+                        convert_structure_to_graph_with_index((i, s))
+                        for i, s in enumerate(batch_structures)
+                    ]
 
                     # Process results and maintain original order
                     result_dict = {}
